@@ -1,0 +1,96 @@
+version: "3.8"
+
+networks:
+  smart-inbox-network:
+    driver: bridge
+    name: smart-inbox-network
+
+volumes:
+  oracle-data:
+    name: smart-inbox-oracle-data
+  document-storage:
+    name: smart-inbox-document-storage
+
+services:
+  oracle:
+    image: gvenzl/oracle-free:slim
+    container_name: smart-inbox-oracle
+    restart: unless-stopped
+    ports:
+      - "1521:1521"
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_ROOT_PASSWORD:-oracle_admin_secret}
+      APP_USER: ${ORACLE_USER:-smart_inbox}
+      APP_USER_PASSWORD: ${ORACLE_PASSWORD:-smart_inbox_secret}
+      DATABASE: ${ORACLE_SERVICE:-FREEPDB1}
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./database/schema.sql:/container-entrypoint-initdb.d/01_schema.sql:ro
+      - ./database/seed.sql:/container-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 40s
+    networks:
+      - smart-inbox-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smart-inbox-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      ORACLE_HOST: oracle
+      ORACLE_PORT: 1521
+      ORACLE_SERVICE: ${ORACLE_SERVICE:-FREEPDB1}
+      ORACLE_USER: ${ORACLE_USER:-smart_inbox}
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD:-smart_inbox_secret}
+      BACKEND_PORT: 8080
+      APP_STORAGE_PATH: /app/storage
+      MAILBOX_TYPE: ${MAILBOX_TYPE:-mock}
+      MAILBOX_MOCK_PATH: /app/test-data/emails
+      MAILBOX_POLL_CRON: "${MAILBOX_POLL_CRON:-0 */1 * * * *}"
+      MAILBOX_POLL_ENABLED: "true"
+      AI_SERVICE_URL: http://ai-service:8000
+      AI_MODEL_NAME: ${AI_MODEL_NAME:-Qwen3-VL-2B-Instruct}
+    volumes:
+      - document-storage:/app/storage
+      - ./test-data/emails:/app/test-data/emails:ro
+    depends_on:
+      oracle:
+        condition: service_healthy
+    networks:
+      - smart-inbox-network
+
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: smart-inbox-ai-service
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      AI_MODEL_NAME: ${AI_MODEL_NAME:-Qwen3-VL-2B-Instruct}
+    volumes:
+      - document-storage:/app/storage:ro
+    networks:
+      - smart-inbox-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: smart-inbox-frontend
+    restart: unless-stopped
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+    networks:
+      - smart-inbox-network

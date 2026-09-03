@@ -1,0 +1,15 @@
+target/
+*.class
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.env
+storage/*
+!storage/.gitkeep
+test-data/storage/*

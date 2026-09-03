@@ -1,0 +1,69 @@
+server:
+  port: ${BACKEND_PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: smart-inbox-backend
+
+  datasource:
+    url: jdbc:oracle:thin:@${ORACLE_HOST:localhost}:${ORACLE_PORT:1521}/${ORACLE_SERVICE:FREEPDB1}
+    username: ${ORACLE_USER:smart_inbox}
+    password: ${ORACLE_PASSWORD:smart_inbox_secret}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    open-in-view: false
+    database-platform: org.hibernate.dialect.OracleDialect
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 20
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+app:
+  storage:
+    path: ${APP_STORAGE_PATH:./storage}
+
+mailbox:
+  type: ${MAILBOX_TYPE:mock}
+  poll:
+    enabled: ${MAILBOX_POLL_ENABLED:true}
+    cron: "${MAILBOX_POLL_CRON:0 */1 * * * *}"
+  mock:
+    path: ${MAILBOX_MOCK_PATH:./test-data/emails}
+  imap:
+    host: ${MAIL_HOST:imap.example.com}
+    port: ${MAIL_PORT:993}
+    username: ${MAIL_USERNAME:smartinbox@example.com}
+    password: ${MAIL_PASSWORD:change_me}
+    folder: ${MAIL_FOLDER:INBOX}
+    ssl: ${MAIL_SSL_ENABLE:true}
+
+queue:
+  capacity: 1000
+  worker:
+    enabled: true
+    concurrency: 1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

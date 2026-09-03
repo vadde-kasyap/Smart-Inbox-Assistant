@@ -1,0 +1,9 @@
+fastapi>=0.110.0
+uvicorn>=0.28.0
+pydantic>=2.6.0
+pymupdf>=1.24.0
+pdfplumber>=0.11.0
+langgraph>=0.0.30
+langchain-core>=0.1.30
+pillow>=10.2.0
+pytest>=8.0.0
