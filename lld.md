@@ -131,50 +131,238 @@ smart-inbox/
 
 ---
 
-## 4. Oracle Relational Data Model
+## 4. Oracle Relational Data Model (Entity-Relationship)
 
-The application models the domain through 10 interrelated Oracle entities with referential integrity and indexes:
+```mermaid
+erDiagram
+    EMAILS ||--o{ ATTACHMENTS : "contains"
+    EMAILS ||--o{ AUDIT_LOGS : "logs"
+    ATTACHMENTS ||--o{ PROCESSING_JOBS : "spawns"
+    PROCESSING_JOBS ||--o| AI_RESULTS : "produces"
+    PROCESSING_JOBS ||--o| PROCESSING_METRICS : "measures"
+    AI_RESULTS ||--o{ CLASSIFICATIONS : "classifies"
+    AI_RESULTS ||--o{ EXTRACTED_FIELDS : "extracts"
+    AI_RESULTS ||--o{ IMAGE_RESULTS : "describes"
+    EXTRACTED_FIELDS ||--o{ SOURCE_REFERENCES : "proven_by"
 
-```text
-EMAIL
- ├── ATTACHMENT
- │      └── PROCESSING_JOB
- │              ├── PROCESSING_METRICS
- │              └── AI_RESULT
- │                     ├── CLASSIFICATION
- │                     ├── EXTRACTED_FIELD
- │                     │      └── SOURCE_REFERENCE
- │                     └── IMAGE_RESULT
- └── AUDIT_LOG
+    EMAILS {
+        number id PK
+        string message_id UK
+        string sender_email
+        string subject
+        string body
+        string status
+        timestamp received_at
+    }
+
+    ATTACHMENTS {
+        number id PK
+        number email_id FK
+        string filename
+        string sha256_hash
+        string storage_path
+        number file_size
+        boolean is_pdf
+    }
+
+    PROCESSING_JOBS {
+        number id PK
+        number attachment_id FK
+        string status
+        number retry_count
+        string error_message
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    AI_RESULTS {
+        number id PK
+        number job_id FK
+        string model_name
+        string model_version
+        string summary
+        timestamp created_at
+    }
+
+    CLASSIFICATIONS {
+        number id PK
+        number ai_result_id FK
+        string category
+        number confidence
+        string reason
+    }
+
+    EXTRACTED_FIELDS {
+        number id PK
+        number ai_result_id FK
+        string field_group
+        string field_name
+        string field_value
+        number confidence
+    }
+
+    SOURCE_REFERENCES {
+        number id PK
+        number extracted_field_id FK
+        string source_type
+        number page_number
+        string text_snippet
+        string bounding_box
+    }
+
+    IMAGE_RESULTS {
+        number id PK
+        number ai_result_id FK
+        number page_number
+        string image_reference
+        string description
+        number confidence
+    }
+
+    PROCESSING_METRICS {
+        number id PK
+        number job_id FK
+        number total_duration_ms
+        number extraction_duration_ms
+        number ocr_duration_ms
+        number translation_duration_ms
+        number llm_duration_ms
+        number validation_duration_ms
+    }
+
+    AUDIT_LOGS {
+        number id PK
+        number email_id FK
+        string action
+        string actor_id
+        string actor_type
+        string old_value
+        string new_value
+        string metadata
+        timestamp created_at
+    }
 ```
-
-### Table Definitions
-
-| Table Name | Primary Key | Key Foreign Keys | Purpose |
-| :--- | :--- | :--- | :--- |
-| `EMAILS` | `id` | — | Ingested email metadata, sender, subject, body, status (`RECEIVED`, `PROCESSING`, `REVIEW_REQUIRED`, `REVIEWED`, `FAILED`). Unique on `message_id`. |
-| `ATTACHMENTS` | `id` | `email_id` &rarr; `EMAILS(id)` | Attachment filename, SHA-256 hash, storage path, file size, PDF flag. |
-| `PROCESSING_JOBS` | `id` | `attachment_id` &rarr; `ATTACHMENTS(id)` | Job lifecycle status (`QUEUED`, `PROCESSING`, `COMPLETED`, `RETRYING`, `REVIEW_REQUIRED`, `FAILED`), retry count, error message. |
-| `AI_RESULTS` | `id` | `job_id` &rarr; `PROCESSING_JOBS(id)` | Model name, model version, execution timestamp, structured clinical summary narrative. |
-| `CLASSIFICATIONS` | `id` | `ai_result_id` &rarr; `AI_RESULTS(id)` | Multi-label category (`ICSR`, `PQC`, `MI`, `NOT_RELEVANT`), confidence score (0.00–1.00), justification reason. |
-| `EXTRACTED_FIELDS` | `id` | `ai_result_id` &rarr; `AI_RESULTS(id)` | Domain field group (`patient`, `product`, `reaction`, `reporter`, `pqc`, `mi`), field name, extracted value (`"Not stated"` if absent), confidence. |
-| `SOURCE_REFERENCES`| `id` | `extracted_field_id` &rarr; `EXTRACTED_FIELDS(id)` | Source type (`PDF` or `EMAIL`), page number, bounding box coordinates, verbatim text snippet. |
-| `IMAGE_RESULTS` | `id` | `ai_result_id` &rarr; `AI_RESULTS(id)` | Extracted image reference, page number, AI descriptive caption, confidence. |
-| `PROCESSING_METRICS`| `id` | `job_id` &rarr; `PROCESSING_JOBS(id)` | Breakdown durations in milliseconds: extraction, OCR, translation, LLM inference, validation, and total time. |
-| `AUDIT_LOGS` | `id` | `email_id` &rarr; `EMAILS(id)` | Immutable action log (`EMAIL_INGESTED`, `AI_COMPLETED`, `REVIEW_ACCEPTED`, `REVIEW_OVERRIDE`), actor ID, actor type, old value, new value, timestamp. |
 
 ---
 
-## 5. Ingestion, Queue & Worker Design
+## 5. Job & Email Processing State Machine
 
-### 5.1 Attachment Fallback Handling
+```mermaid
+stateDiagram-v2
+    [*] --> RECEIVED : Ingest Email (IMAP / Mock / Upload)
+    RECEIVED --> QUEUED : Create ProcessingJob (PDF or email_body.txt)
+    
+    state JobLifecycle {
+        [*] --> QUEUED
+        QUEUED --> PROCESSING : JobWorker Dequeues
+        PROCESSING --> COMPLETED : FastAPI Returns Valid Output
+        PROCESSING --> RETRYING : Error & retryCount < maxRetries
+        RETRYING --> QUEUED : Exponential Backoff Re-enqueue
+        PROCESSING --> REVIEW_REQUIRED : Retries Exhausted OR Hard Parse Error
+        PROCESSING --> FAILED : Fatal / Unsupported Format
+    }
+
+    COMPLETED --> REVIEW_REQUIRED : Default Human Review Required
+    REVIEW_REQUIRED --> REVIEWED : Reviewer Accepts OR Overrides
+    REVIEW_REQUIRED --> FAILED : Job Escalation Failure
+    REVIEWED --> [*]
+    FAILED --> [*]
+```
+
+---
+
+## 6. Document Understanding Pipeline (AI Microservice)
+
+```mermaid
+flowchart TD
+    Start(["Input: Document Storage Path + Email Text"]) --> Detect{"Format Detection"}
+
+    Detect -->|Digital PDF| PyMu["PyMuPDF / pdfplumber<br/>- Extract text coordinates & layout<br/>- Preserve page numbers<br/>- Extract table structures"]
+    Detect -->|Scanned / Image| VisionNode["Render Page to Image<br/>- Qwen Vision OCR & Handwriting<br/>- Bounding box extraction<br/>- Low confidence sets reviewRequired"]
+    Detect -->|Plain Text / Email Body| RawText["Direct Text Parser<br/>- Extract paragraphs & timestamps"]
+
+    PyMu --> Lang{"Language Detection"}
+    VisionNode --> Lang
+    RawText --> Lang
+
+    Lang -->|Non-English| Translate["Translation Node<br/>- Preserve original language text<br/>- Store English translation alongside<br/>- Maintain source page link"]
+    Lang -->|English| DocType{"Document Classifier"}
+    Translate --> DocType
+
+    DocType -->|Article PDF| ArticleNode["Article Layout Processor<br/>- Filter reference/bibliography sections<br/>- Handle multi-column layout<br/>- Isolate patient case narrative"]
+    DocType -->|Clinical Report / Form| CanonicalBuilder["Canonical Context Builder"]
+    ArticleNode --> CanonicalBuilder
+
+    CanonicalBuilder --> Assembly["CanonicalCaseContext<br/>- Normalized email metadata<br/>- Pages & TextBlocks with page coordinates<br/>- Tables & Image descriptions"]
+
+    Assembly --> Prompt["Master Safety Extraction Prompt<br/>- Multi-label: ICSR, PQC, MI, NOT_RELEVANT<br/>- Safety Rule: Never guess ('Not stated')<br/>- Mandatory source references"]
+
+    Prompt --> VLM["Qwen-VL Structured Reasoner"]
+
+    VLM --> Validate{"Quality Gate Validator"}
+
+    Validate -->|Pass: All sources valid & schema compliant| Output(["AIProcessResponse JSON<br/>- Multi-label classifications + reasons<br/>- Extracted fields + source refs<br/>- 10-15 sentence clinical summary<br/>- Processing metrics breakdown"])
+    Validate -->|Fail: Bad JSON / missing source / hallucination| RetryCheck{"retryCount < 3?"}
+    RetryCheck -->|Yes| Prompt
+    RetryCheck -->|No| Fallback(["Escalate: status = REVIEW_REQUIRED"])
+```
+
+---
+
+## 7. Reviewer Workspace Interaction & Audit Workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Reviewer as Human Reviewer
+    participant UI as Reviewer UI (:4200)
+    participant Backend as Spring Boot API (:8080)
+    participant Oracle as Oracle Database (:1521)
+    participant PDFStore as Shared Document Storage
+
+    Reviewer->>UI: Selects case in Review Queue
+    UI->>Backend: GET /api/review-items/{emailId}
+    Backend->>Oracle: Query Email, Jobs, AI Results, Facts, Sources, Audit
+    Oracle-->>Backend: Return complete entity graph
+    Backend-->>UI: 200 OK (ReviewDetailDto)
+    UI->>UI: Render 7-Section Hierarchy (Adaptive Domain Findings)
+    UI->>Backend: GET /api/emails/{id}/attachments/{id}/content
+    Backend->>PDFStore: Stream PDF or document binary
+    PDFStore-->>UI: Render PDF in embedded viewer
+
+    opt Inspect Evidence
+        Reviewer->>UI: Clicks "Page X" evidence button on fact
+        UI->>UI: Display verbatim snippet in Evidence Inspector
+        UI->>UI: Navigate PDF frame to #page=X
+    end
+
+    alt Accept Case
+        Reviewer->>UI: Clicks "Approve Findings"
+        UI->>Backend: POST /api/review-items/{emailId}/accept
+        Backend->>Oracle: Update status = REVIEWED, Insert AUDIT_LOG (REVIEW_ACCEPTED)
+        Backend-->>UI: 200 OK (Updated detail)
+        UI->>UI: Update status badge to "APPROVED BY REVIEWER"
+    else Override Case
+        Reviewer->>UI: Clicks "Edit Details", changes fields / categories
+        UI->>Backend: POST /api/review-items/{emailId}/override
+        Backend->>Oracle: Update classifications/fields, Insert AUDIT_LOG (REVIEW_OVERRIDE with diffs)
+        Backend-->>UI: 200 OK (Updated detail)
+        UI->>UI: Re-render updated findings & append audit timeline
+    end
+```
+
+---
+
+## 8. Ingestion, Queue & Worker Design
+
+### 8.1 Attachment Fallback Handling
 Every incoming email requires automated analysis. When an email arrives without PDF attachments:
 - `EmailIngestionService` creates a synthetic attachment named `email_body.txt`.
 - Saves the body content to the storage repository.
 - Creates an attachment record and enqueues a `ProcessingJob`.
 - Guarantees 100% processing across both email bodies and file attachments.
 
-### 5.2 In-Process Queue & Asynchronous Worker
+### 8.2 In-Process Queue & Asynchronous Worker
 - **Queue Implementation**: `java.util.concurrent.BlockingQueue<Long>` (`JobQueue`) holds pending `jobId`s.
 - **Worker Execution**: `JobWorker` runs a continuous background loop:
   1. Retrieves next `jobId` from queue.
@@ -186,54 +374,14 @@ Every incoming email requires automated analysis. When an email arrives without 
 
 ---
 
-## 6. Document Intelligence Pipeline (AI Microservice)
+## 9. Reviewer Workspace Design (Frontend Tier)
 
-The FastAPI microservice processes documents using deterministic tools first, reserving the vision-language model for multimodal and semantic extraction:
-
-```text
-[Input Document: PDF / TXT]
-       │
-       ▼
-1. Format Detection ────► (Digital PDF, Scanned PDF, or Plain Text)
-       │
-       ├─► Digital: PyMuPDF extracts text coordinates, pages, layout; pdfplumber extracts tables.
-       └─► Scanned / Image: Page rendered to image -> Qwen Vision OCR -> text blocks + confidence.
-       │
-       ▼
-2. Language Detection & Translation ──► Detects language (e.g. French, German). Preserves original text
-                                         and adds English translation alongside source page coordinates.
-       │
-       ▼
-3. Article & Layout Analysis ────────► Filters bibliography/reference sections, handles multi-column layouts,
-                                         and isolates clinical case narratives from background discussion.
-       │
-       ▼
-4. Canonical Context Assembly ───────► Normalizes document into CanonicalCaseContext:
-                                         { email, documents, pages, tables, images, textBlocks }
-       │
-       ▼
-5. Qwen-VL Structured Reasoner ──────► Ingests canonical context + master extraction prompt.
-                                         Outputs multi-label classification, reasons, structured facts,
-                                         source coordinates, and 10–15 sentence clinical summary.
-       │
-       ▼
-6. Pydantic & Source Quality Gates ──► Validates:
-                                         - Missing clinical facts strictly equal "Not stated".
-                                         - Every extracted field contains valid source references.
-                                         - Category confidences are bounded [0.0, 1.0].
-                                         - Page numbers exist in the source document.
-```
-
----
-
-## 7. Reviewer Workspace Design (Frontend Tier)
-
-### 7.1 Real-Time Queue & Progress Polling
+### 9.1 Real-Time Queue & Progress Polling
 - Displays queue status chips (`X in queue`) with pulsing indicators when documents are processing.
 - Automatically polls `/api/review-items` every 2.5 seconds while active jobs exist.
 - Shows dynamic case progress bar (15% Queued &rarr; 65% Processing &rarr; 100% Complete).
 
-### 7.2 The 7-Section Case Assessment Hierarchy
+### 9.2 The 7-Section Case Assessment Hierarchy
 The case view organizes critical review data into a scannable, standardized clinical workspace:
 
 1. **Section 1: AI Assessment & Review Status**
@@ -261,7 +409,7 @@ The case view organizes critical review data into a scannable, standardized clin
 
 ---
 
-## 8. REST API Specifications
+## 10. REST API Specifications
 
 ### Review Endpoints
 
@@ -291,7 +439,7 @@ The case view organizes critical review data into a scannable, standardized clin
 
 ---
 
-## 9. Error Handling & Resilience Strategy
+## 11. Error Handling & Resilience Strategy
 
 | Failure Scenario | Component | Resolution Strategy |
 | :--- | :--- | :--- |
