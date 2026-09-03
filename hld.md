@@ -104,8 +104,7 @@ smart-inbox/
 ├── hld.md                        # High-Level Architecture (this document)
 ├── lld.md                        # Low-Level System Design & Data Models
 ├── implementation-strategy.md    # Engineering implementation milestones
-├── AGENTS.md                     # Safety rules, non-negotiable standards, & contract
-└── problem-statement.pdf         # Original assignment requirements
+└── AGENTS.md                     # Safety rules, non-negotiable standards, & contract
 ```
 
 ---
