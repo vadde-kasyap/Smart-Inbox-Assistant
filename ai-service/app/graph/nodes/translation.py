@@ -45,7 +45,7 @@ def translation_node(state: GraphState) -> GraphState:
     for block in text_blocks:
         original_text = block.get("text", "").strip()
         if not original_text:
-            translated_blocks.append({**block, "text": original_text, "extraction_method": "TRANSLATED"})
+            translated_blocks.append({**block, "text": original_text, "extraction_method": "TRANSLATION"})
             continue
 
         # Truncate very long blocks to avoid context overflow
@@ -56,7 +56,7 @@ def translation_node(state: GraphState) -> GraphState:
             **block,
             "text": translated_text,
             "original_text": original_text,  # preserve original
-            "extraction_method": "TRANSLATED",
+            "extraction_method": "TRANSLATION",
         })
 
     # Store translated blocks alongside originals in the canonical context

@@ -307,6 +307,20 @@ flowchart TD
     RetryCheck -->|No| Fallback(["Escalate: status = REVIEW_REQUIRED"])
 ```
 
+### 6.1 AI Execution Model & Clinical Safety Architecture
+
+#### Model Selection & Laptop Resource Optimization
+- **Selected Model**: `Qwen/Qwen2-VL-2B-Instruct` (or `Qwen3-VL-2B-Instruct`), chosen specifically for its high multimodal reasoning performance combined with a lightweight parameter footprint (2B) suitable for local laptop CPU/GPU execution.
+- **Hardware-Aware Loading**: Configured in `QwenClient` using `low_cpu_mem_usage=True`, automatic device mapping (`device_map="cpu"` with `torch.float32` or `"auto"` with `torch.bfloat16` when CUDA is detected) to prevent out-of-memory errors on 8–16 GB RAM developer machines.
+- **Persistent Model Cache**: Dedicated Docker named volume `huggingface-cache` mounted at `/root/.cache/huggingface` guarantees model weights persist across container restarts, eliminating repetitive 4.5 GB downloads.
+- **External Local Server Support**: Allows seamless connection to local inference servers via `AI_API_BASE` (e.g., Ollama or vLLM at `http://host.docker.internal:11434/v1`).
+- **Default Execution**: `USE_MOCK_AI=false` enabled by default in `docker-compose.yml` to ensure real model inference is actively exercised.
+
+#### Clinical Safety & Misclassification Prevention (Fallback Engine)
+- **Life-Threatening Adverse Reaction Coverage**: The clinical safety dictionary incorporates critical acute events (`"heart attack"`, `"myocardial infarction"`, `"cardiac arrest"`, `"chest pain"`, `"stroke"`, `"anaphylaxis"`) and automatically escalates their seriousness assessment to `"Serious"`.
+- **Typo & Variation Tolerance**: Recognizes common misspellings (e.g. `"alergy"`, `"paracetomol"`) and pharmaceutical forms (e.g. `"tablets"`, `"capsules"`, `"syrup"`), preventing acute consumer reports from being falsely rejected as `NOT_RELEVANT`.
+- **Reporter Identity Normalization**: Converts raw email senders (e.g., `VADDEKASYAP@GMAIL.COM`) into human-readable Title Case names (`"Vadde Kasyap"`) with appropriate `"Consumer"` role assignment.
+
 ---
 
 ## 7. Reviewer Workspace Interaction & Audit Workflow

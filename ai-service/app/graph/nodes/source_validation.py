@@ -31,8 +31,8 @@ def source_validation_node(state: GraphState) -> GraphState:
                 if current_att_id is not None and att_id is not None and att_id != current_att_id:
                     errors.append(f"Field '{fname}' references mismatched attachment ID {att_id}")
             snippet = s.get("text_snippet")
-            # Only require non-empty text snippet for stated facts; 'Not stated' facts represent absence
-            if val != "Not stated" and (not snippet or not snippet.strip()):
+            # Only require non-empty text snippet for stated facts; 'Not stated' and 'No' represent absence
+            if val not in ["Not stated", "No"] and (not snippet or not snippet.strip()):
                 errors.append(f"Field '{fname}' is missing source text snippet.")
 
     duration_ms = int((time.time() - start_time) * 1000)

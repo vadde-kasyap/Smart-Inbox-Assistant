@@ -6,7 +6,7 @@ from app.graph.pipeline import execute_pipeline
 def test_pipeline_with_synthetic_pdf():
     # Use existing test synthetic PDF
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    test_pdf_path = os.path.join(base_dir, "..", "test-data", "pdfs", "case_report_syntho.pdf")
+    test_pdf_path = os.path.join(base_dir, "..", "test-data", "pdfs", "cioms_syntho_report.pdf")
     test_pdf_path = os.path.abspath(test_pdf_path)
 
     request = AIProcessRequest(
@@ -15,11 +15,11 @@ def test_pipeline_with_synthetic_pdf():
             emailId=1,
             sender="safety@hospital.org",
             subject="Adverse Event Notice - SynthoStatin",
-            body="Patient 54M developed rash following 20mg SynthoStatin."
+            body="Patient 54M developed severe cutaneous rash following 20mg SynthoStatin."
         ),
         document=DocumentContext(
             attachmentId=25,
-            filename="case_report_syntho.pdf",
+            filename="cioms_syntho_report.pdf",
             storageReference=test_pdf_path
         )
     )

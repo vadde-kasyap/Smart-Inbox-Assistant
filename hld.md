@@ -66,7 +66,7 @@ flowchart TD
 | :--- | :--- | :--- |
 | **Frontend** | Vanilla JS / CSS / Nginx (`:4200`) | Review queue with real-time status polling, 7-section case assessment hierarchy, inline PDF page navigation, evidence inspector, and accept/override review workflows. |
 | **Backend** | Spring Boot 3.2 / Java 21 (`:8080`) | IMAP mailbox polling & synthetic upload handling, in-process job queue, AI orchestration, Oracle persistence, idempotency checking, and audit logging. |
-| **AI Service** | FastAPI / Python 3.11 (`:8000`) | Deterministic PDF text/table extraction (PyMuPDF), scanned OCR fallback, canonical context assembly, Qwen VLM multi-label classification, domain extraction, and strict validation. |
+| **AI Service** | FastAPI / Python 3.11 (`:8000`) | Deterministic PDF text/table extraction (PyMuPDF), scanned OCR fallback, canonical context assembly, Qwen2-VL structured reasoning (default `USE_MOCK_AI=false` with persistent volume caching and CPU/GPU memory optimization), domain extraction, and strict validation. |
 | **Database** | Oracle Database Free 23c (`:1521`) | Relational persistence for emails, attachments, jobs, classifications, extracted facts, source coordinates, processing metrics, and audit history. |
 | **Storage** | Docker Named Volume (`storage`) | Durable local document storage preserving original binary PDF attachments and synthetic email bodies. |
 
@@ -116,8 +116,9 @@ smart-inbox/
 3. **Mandatory Source Traceability**: Every extracted fact links back to its origin:
    - For PDFs: Attachment ID, page number, and verbatim text snippet.
    - For Emails: Email ID and exact body text snippet.
-4. **Multi-Label Classification**: Each document is classified across `ICSR`, `PQC`, `MI`, and `NOT_RELEVANT` with bounded confidence scores (0.0 to 1.0) and explicit justification.
+4. **Multi-Label Classification**: Each document is classified across `ICSR`, `PQC`, `MI`, and `NOT_RELEVANT` with bounded confidence scores (0.0 to 1.0) and explicit justification. Acute medical conditions (cardiac events like heart attacks, anaphylaxis, severe rashes) and common phonetic typos (e.g., "alergy") are strictly protected against misclassification as `NOT_RELEVANT`.
 5. **Human-in-the-Loop Oversight**: AI is strictly advisory. Final disposition requires reviewer acceptance or explicit override, both recorded in an immutable audit trail.
+6. **Local Hardware Adaptation**: The AI tier uses the lightweight `Qwen2-VL-2B-Instruct` model optimized for laptop CPU/GPU execution (`low_cpu_mem_usage=True`), with persistent disk caching across container lifecycles.
 
 ---
 
@@ -154,3 +155,8 @@ docker compose ps
 - **Backend API**: Accessible at `http://localhost:8080` (`/actuator/health`)
 - **AI Service**: Accessible at `http://localhost:8000` (`/health`)
 - **Oracle Database**: Listening on `localhost:1521`
+
+### AI Execution Configuration
+- `USE_MOCK_AI=false` (default): Real `Qwen/Qwen2-VL-2B-Instruct` model loaded into memory, caching weights in the `huggingface-cache` persistent volume.
+- `AI_API_BASE`: Optional OpenAI-compatible base URL (e.g. `http://host.docker.internal:11434/v1` for local Ollama).
+- `USE_MOCK_AI=true`: Fallback deterministic rule-based mode for fast startup and testing.

@@ -155,7 +155,7 @@ def _ocr_page(client, page: fitz.Page, page_num: int, state: GraphState) -> None
                 page_number=page_num,
                 location="full-page",
                 confidence=0.50,
-                extraction_method="VISION_MOCK",
+                extraction_method="VISION",
             ).model_dump()
         )
         return
@@ -219,6 +219,6 @@ def _ocr_page(client, page: fitz.Page, page_num: int, state: GraphState) -> None
                 page_number=page_num,
                 location="full-page",
                 confidence=0.10,
-                extraction_method="VISION_ERROR",
+                extraction_method="VISION",
             ).model_dump()
         )

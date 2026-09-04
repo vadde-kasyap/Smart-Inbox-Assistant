@@ -299,6 +299,100 @@ class TestLLMAnalysisRegex:
         assert "ICSR" in cats
         assert "PQC" in cats
 
+    def test_broken_syrup_bottle_pqc_classified(self):
+        """User edge case: 'product damages the syrup bottel is broken' from test1@gmail.com."""
+        from app.graph.nodes.llm_analysis import _extract_via_regex
+        canonical = {
+            "text_blocks": [],
+            "tables": [],
+            "subject": "product damages",
+            "sender": "test1@gmail.com",
+            "email_body": "the syrup bottel is broken",
+            "filename": "email_body.txt",
+            "document_type": "REPORT",
+            "original_language": "English",
+        }
+        classes, fields, summary = _extract_via_regex(canonical, "product damages the syrup bottel is broken", 1, 1)
+        cats = [c.category for c in classes]
+        assert "PQC" in cats
+        assert "NOT_RELEVANT" not in cats
+
+        prod_f = next((f for f in fields if f["field_group"] == "pqc" and f["field_name"] == "product"), None)
+        assert prod_f is not None
+        assert prod_f["value"] == "Syrup"
+
+        issue_f = next((f for f in fields if f["field_group"] == "pqc" and f["field_name"] == "issue"), None)
+        assert issue_f is not None
+        assert "broken" in issue_f["value"].lower() or "damages" in issue_f["value"].lower()
+
+    def test_consumer_icsr_reporter_name_cleaned(self):
+        """User case: VADDEKASYAP@GMAIL.COM reporting paracetamol rash."""
+        from app.graph.nodes.llm_analysis import _extract_via_regex
+        canonical = {
+            "text_blocks": [],
+            "tables": [],
+            "subject": "regarding drug side effects",
+            "sender": "VADDEKASYAP@GMAIL.COM",
+            "email_body": "i have used paracetomol and got a rash",
+            "filename": "email_body.txt",
+            "document_type": "REPORT",
+            "original_language": "English",
+        }
+        classes, fields, summary = _extract_via_regex(canonical, "regarding drug side effects i have used paracetomol and got a rash", 1, 1)
+        cats = [c.category for c in classes]
+        assert "ICSR" in cats
+
+        rep_id_f = next((f for f in fields if f["field_group"] == "reporter" and f["field_name"] == "identity"), None)
+        assert rep_id_f is not None
+        assert rep_id_f["value"] == "Vadde Kasyap"
+
+        role_f = next((f for f in fields if f["field_group"] == "reporter" and f["field_name"] == "role"), None)
+        assert role_f is not None
+        assert role_f["value"] == "Consumer"
+
+        prod_f = next((f for f in fields if f["field_group"] == "product" and f["field_name"] == "name"), None)
+        assert prod_f is not None
+        assert prod_f["value"] == "Paracetamol"
+
+    def test_consumer_heart_attack_drug_allergy_classified_icsr(self):
+        """User case: VADDEKASYAP@GMAIL.COM reporting heart attack after using tablets with subject 'drug alergy'."""
+        from app.graph.nodes.llm_analysis import _extract_via_regex
+        canonical = {
+            "text_blocks": [],
+            "tables": [],
+            "subject": "drug alergy",
+            "sender": "VADDEKASYAP@GMAIL.COM",
+            "email_body": "i got a heart attack after using the tablets",
+            "filename": "email_body.txt",
+            "document_type": "REPORT",
+            "original_language": "English",
+        }
+        classes, fields, summary = _extract_via_regex(canonical, "drug alergy i got a heart attack after using the tablets", 1, 1)
+        cats = [c.category for c in classes]
+        assert "ICSR" in cats
+        assert "NOT_RELEVANT" not in cats
+
+        react_f = next((f for f in fields if f["field_group"] == "reaction" and f["field_name"] == "description"), None)
+        assert react_f is not None
+        assert "heart attack" in react_f["value"].lower()
+
+        ser_f = next((f for f in fields if f["field_group"] == "other" and f["field_name"] == "seriousness"), None)
+        assert ser_f is not None
+        assert ser_f["value"] == "Serious"
+
+        rep_id_f = next((f for f in fields if f["field_group"] == "reporter" and f["field_name"] == "identity"), None)
+        assert rep_id_f is not None
+        assert rep_id_f["value"] == "Vadde Kasyap"
+
+    def test_clean_human_name_helper(self):
+        from app.graph.nodes.llm_analysis import _clean_human_name
+        assert _clean_human_name("VADDEKASYAP@GMAIL.COM") == "Vadde Kasyap"
+        assert _clean_human_name("vaddekasyap@gmail.com") == "Vadde Kasyap"
+        assert _clean_human_name("vadde.kasyap@gmail.com") == "Vadde Kasyap"
+        assert _clean_human_name("test1@gmail.com") == "Test1"
+        assert _clean_human_name('"Dr. John Smith" <jsmith@clinic.org>') == "Dr. John Smith"
+        assert _clean_human_name("dr.jane_smith@hospital.org") == "Dr Jane Smith"
+
     def test_idempotency_same_input(self):
         """Same input should always produce same classification categories."""
         email = "Patient 54M experienced erythematous rash after SynthoStatin 10mg."

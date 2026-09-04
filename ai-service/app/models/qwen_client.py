@@ -56,15 +56,20 @@ class QwenClient:
         self.model_name: str = os.getenv(
             "AI_MODEL_NAME", "Qwen/Qwen2-VL-2B-Instruct"
         )
-        # Normalise the env var (assignment uses "Qwen3-VL-2B-Instruct" without the
-        # HuggingFace org prefix).  Map it to the published HF id.
         self.model_name = self._normalise_model_name(self.model_name)
+
+        # Support OpenAI-compatible endpoints (e.g. Ollama, vLLM, LMStudio, OpenAI, Gemini)
+        self.api_base: Optional[str] = os.getenv("AI_API_BASE") or os.getenv("OPENAI_API_BASE")
+        self.api_key: str = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY") or "dummy-key"
 
         self._use_mock: bool = os.getenv("USE_MOCK_AI", "false").lower() == "true"
         self._model = None
         self._processor = None
 
-        if not self._use_mock:
+        if self.api_base:
+            logger.info("AI client configured with API endpoint: %s (model=%s)", self.api_base, self.model_name)
+            self._use_mock = False
+        elif not self._use_mock:
             self._load_model()
 
     # ------------------------------------------------------------------
@@ -72,7 +77,7 @@ class QwenClient:
     # ------------------------------------------------------------------
     @property
     def is_mock(self) -> bool:
-        return self._use_mock
+        return self._use_mock and not bool(self.api_base)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -90,13 +95,49 @@ class QwenClient:
         }
         return mapping.get(name, name)
 
-    def _load_model(self) -> None:
-        """Attempt to load the Qwen2-VL model + processor.  Falls back to mock on any error."""
+    def _call_api_endpoint(self, messages: list, max_new_tokens: int = 2048) -> str:
+        """Call an OpenAI/Ollama/vLLM compatible /chat/completions endpoint."""
+        import urllib.request
+        import urllib.error
+
+        url = self.api_base.rstrip("/") + "/chat/completions"
+        payload = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": 0.05,
+            "max_tokens": max_new_tokens,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
         try:
-            import torch  # noqa: F401
+            with urllib.request.urlopen(req, timeout=120) as response:
+                body = response.read().decode("utf-8")
+                data = json.loads(body)
+                choices = data.get("choices", [])
+                if choices and "message" in choices[0]:
+                    return choices[0]["message"].get("content", "").strip()
+                return ""
+        except Exception as exc:
+            logger.error("Error calling AI API endpoint %s: %s", url, exc)
+            return ""
+
+    def _load_model(self) -> None:
+        """Attempt to load the Qwen2-VL model + processor. Falls back to mock on any error."""
+        try:
+            import torch
             from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 
-            logger.info("Loading model '%s' — this may take several minutes…", self.model_name)
+            is_cuda = torch.cuda.is_available()
+            device_map = "auto" if is_cuda else "cpu"
+            torch_dtype = torch.bfloat16 if is_cuda else torch.float32
+
+            logger.info(
+                "[AI MODEL] Loading '%s' (device_map=%s, dtype=%s, cuda=%s) — may take a few minutes on first run...",
+                self.model_name, device_map, torch_dtype, is_cuda
+            )
 
             self._processor = AutoProcessor.from_pretrained(
                 self.model_name,
@@ -104,11 +145,13 @@ class QwenClient:
             )
             self._model = Qwen2VLForConditionalGeneration.from_pretrained(
                 self.model_name,
-                device_map="auto",
+                torch_dtype=torch_dtype,
+                device_map=device_map,
+                low_cpu_mem_usage=True,
                 trust_remote_code=True,
             )
             self._model.eval()
-            logger.info("Model '%s' loaded successfully.", self.model_name)
+            logger.info("[AI MODEL READY] Model '%s' successfully loaded into memory.", self.model_name)
 
         except ImportError as exc:
             logger.warning(
@@ -119,7 +162,7 @@ class QwenClient:
             self._use_mock = True
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
-                "Failed to load model '%s': %s.  Switching to mock mode.",
+                "Failed to load model '%s': %s. Switching to mock mode.",
                 self.model_name,
                 exc,
             )
@@ -160,9 +203,13 @@ class QwenClient:
     # ------------------------------------------------------------------
     def analyze_text(self, prompt: str, max_new_tokens: int = 2048) -> str:
         """
-        Run a text-only prompt.
+        Run a text-only prompt via API endpoint or local model.
         Returns an empty string in mock mode (caller handles the fallback).
         """
+        if self.api_base:
+            messages = [{"role": "user", "content": prompt}]
+            return self._call_api_endpoint(messages, max_new_tokens)
+
         if self._use_mock or self._model is None:
             return ""
 

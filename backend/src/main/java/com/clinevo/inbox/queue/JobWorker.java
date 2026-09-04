@@ -93,6 +93,13 @@ public class JobWorker {
                 Long jobId = jobQueue.poll(1, TimeUnit.SECONDS);
                 if (jobId != null) {
                     jobService.processJob(jobId);
+                } else {
+                    // Check if any QUEUED jobs are in database and process
+                    List<ProcessingJob> queued = jobRepository.findByStatus(JobStatus.QUEUED);
+                    for (ProcessingJob pj : queued) {
+                        if (!running.get()) break;
+                        jobService.processJob(pj.getId());
+                    }
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

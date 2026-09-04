@@ -257,7 +257,7 @@ public class EmailIngestionService {
     /**
      * Non-negotiable rule 12: "Only enqueue work after the database transaction successfully commits."
      */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onEmailIngested(EmailIngestedEvent event) {
         log.info("Transaction committed for Email ID: {}. Enqueueing {} job(s)...",
                 event.emailId(), event.jobIds().size());

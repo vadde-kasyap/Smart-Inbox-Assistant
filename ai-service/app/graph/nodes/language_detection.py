@@ -1,27 +1,25 @@
 import time
 from app.graph.state import GraphState
 
-FRENCH_MARKERS = ["patient", "effets indésirables", "médicament", "signalement", "réaction"]
-GERMAN_MARKERS = ["patient", "nebenwirkung", "arzneimittel", "meldung", "reaktion"]
-SPANISH_MARKERS = ["paciente", "efectos adversos", "medicamento", "notificación", "reacción"]
+FRENCH_MARKERS = ["effets indésirables", "effet indésirable", "médicament", "signalement", "éruption cutanée", "pharmacovigilance", "cher département", "patiente"]
+GERMAN_MARKERS = ["nebenwirkung", "nebenwirkungen", "arzneimittel", "meldung", "hautausschlag", "unerwünschte", "patientenbericht", "sehr geehrte"]
+SPANISH_MARKERS = ["efectos adversos", "reacción adversa", "medicamento", "notificación", "erupción cutánea", "farmacovigilancia", "estimado"]
 
 def language_detection_node(state: GraphState) -> GraphState:
     start_time = time.time()
     
-    # Analyze text blocks
     text_blocks = state.get("canonical_context", {}).get("text_blocks", [])
-    combined_text = " ".join([b.get("text", "") for b in text_blocks]).lower()
+    email_data = state.get("email_data", {}) or {}
+    email_text = (email_data.get("subject", "") or "") + " " + (email_data.get("body", "") or "")
+    combined_text = (" ".join([b.get("text", "") for b in text_blocks]) + " " + email_text + " " + state.get("filename", "")).lower()
     
     detected = "English"
     if any(m in combined_text for m in FRENCH_MARKERS):
-        if "effets indésirables" in combined_text or "signalement" in combined_text:
-            detected = "French"
+        detected = "French"
     elif any(m in combined_text for m in GERMAN_MARKERS):
-        if "nebenwirkung" in combined_text or "arzneimittel" in combined_text:
-            detected = "German"
+        detected = "German"
     elif any(m in combined_text for m in SPANISH_MARKERS):
-        if "efectos adversos" in combined_text or "notificación" in combined_text:
-            detected = "Spanish"
+        detected = "Spanish"
 
     state["language"] = detected
     state["translated"] = (detected != "English")

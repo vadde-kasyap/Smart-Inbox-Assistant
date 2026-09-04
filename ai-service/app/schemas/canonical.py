@@ -6,7 +6,7 @@ class TextBlock(BaseModel):
     page_number: int
     location: Optional[str] = None
     confidence: float = 1.0
-    extraction_method: Literal["DIGITAL_TEXT", "VISION", "TRANSLATION"] = "DIGITAL_TEXT"
+    extraction_method: str = "DIGITAL_TEXT"
 
 class TableData(BaseModel):
     columns: List[str]

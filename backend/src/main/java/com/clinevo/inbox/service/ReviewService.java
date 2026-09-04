@@ -62,7 +62,7 @@ public class ReviewService {
             boolean hasPdf = attachments.stream().anyMatch(a -> Boolean.TRUE.equals(a.getIsPdf()));
 
             // Find AI results for this email
-            List<AIResult> results = aiResultRepository.findByEmailId(email.getId());
+            List<AIResult> results = aiResultRepository.findByEmailIdOrderByIdAsc(email.getId());
             AIResult latestResult = results.isEmpty() ? null : results.get(results.size() - 1);
 
             List<String> categories = new ArrayList<>();
@@ -181,7 +181,7 @@ public class ReviewService {
                 .toList();
 
         // Latest AI Result
-        List<AIResult> results = aiResultRepository.findByEmailId(emailId);
+        List<AIResult> results = aiResultRepository.findByEmailIdOrderByIdAsc(emailId);
         ReviewDetailDto.AIResultDetail aiDetail = null;
 
         if (!results.isEmpty()) {
