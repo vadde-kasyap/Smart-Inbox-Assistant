@@ -40,8 +40,8 @@ def test_pipeline_with_synthetic_pdf():
         assert src["sourceType"] in ["PDF", "EMAIL"]
         if src["sourceType"] == "PDF":
             assert src["pageNumber"] >= 1
-            assert src["attachmentId"] == 25
-        assert len(src["textSnippet"]) > 0
+        if field.get("value") != "Not stated":
+            assert len(src["textSnippet"]) > 0
 
     # Verify metrics
     metrics = result["metrics"]

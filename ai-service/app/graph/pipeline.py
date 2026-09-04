@@ -4,6 +4,7 @@ from app.graph.nodes.format_detection import format_detection_node
 from app.graph.nodes.digital_extraction import digital_extraction_node
 from app.graph.nodes.ocr_vision import ocr_vision_node
 from app.graph.nodes.language_detection import language_detection_node
+from app.graph.nodes.translation import translation_node
 from app.graph.nodes.doc_type import doc_type_node
 from app.graph.nodes.article_processing import article_processing_node
 from app.graph.nodes.canonical import canonical_node
@@ -13,6 +14,7 @@ from app.graph.nodes.source_validation import source_validation_node
 from app.schemas.request import AIProcessRequest
 from app.schemas.response import AIProcessResponse
 
+
 def build_graph():
     workflow = StateGraph(GraphState)
 
@@ -20,6 +22,7 @@ def build_graph():
     workflow.add_node("digital_extraction", digital_extraction_node)
     workflow.add_node("ocr_vision", ocr_vision_node)
     workflow.add_node("language_detection", language_detection_node)
+    workflow.add_node("translation", translation_node)      # NEW: translate non-English docs
     workflow.add_node("doc_type", doc_type_node)
     workflow.add_node("article_processing", article_processing_node)
     workflow.add_node("canonical", canonical_node)
@@ -27,11 +30,17 @@ def build_graph():
     workflow.add_node("validation", validation_node)
     workflow.add_node("source_validation", source_validation_node)
 
+    # Pipeline edges
+    # format_detection ──► digital_extraction ──► ocr_vision
+    #   ──► language_detection ──► translation ──► doc_type
+    #   ──► article_processing ──► canonical ──► llm_analysis
+    #   ──► validation ──► source_validation ──► END
     workflow.set_entry_point("format_detection")
     workflow.add_edge("format_detection", "digital_extraction")
     workflow.add_edge("digital_extraction", "ocr_vision")
     workflow.add_edge("ocr_vision", "language_detection")
-    workflow.add_edge("language_detection", "doc_type")
+    workflow.add_edge("language_detection", "translation")    # NEW edge
+    workflow.add_edge("translation", "doc_type")
     workflow.add_edge("doc_type", "article_processing")
     workflow.add_edge("article_processing", "canonical")
     workflow.add_edge("canonical", "llm_analysis")
@@ -41,7 +50,9 @@ def build_graph():
 
     return workflow.compile()
 
+
 graph_app = build_graph()
+
 
 def execute_pipeline(req: AIProcessRequest) -> dict:
     email_dict = req.email.model_dump() if req.email else {}
@@ -58,6 +69,7 @@ def execute_pipeline(req: AIProcessRequest) -> dict:
         "document_type": "REPORT",
         "language": "English",
         "translated": False,
+        "translated_text": None,
         "canonical_context": None,
         "raw_classifications": [],
         "raw_extracted_fields": [],
@@ -74,7 +86,7 @@ def execute_pipeline(req: AIProcessRequest) -> dict:
             "llm_duration_ms": 0,
             "validation_duration_ms": 0,
         },
-        "final_response": None
+        "final_response": None,
     }
 
     final_state = graph_app.invoke(initial_state)

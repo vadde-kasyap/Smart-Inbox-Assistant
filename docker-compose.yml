@@ -76,9 +76,23 @@ services:
     ports:
       - "8000:8000"
     environment:
-      AI_MODEL_NAME: ${AI_MODEL_NAME:-Qwen3-VL-2B-Instruct}
+      AI_MODEL_NAME: ${AI_MODEL_NAME:-Qwen/Qwen2-VL-2B-Instruct}
+      # Set USE_MOCK_AI=true to skip model loading (fast startup, deterministic regex mode)
+      # Set USE_MOCK_AI=false (default) to enable real Qwen3-VL inference
+      USE_MOCK_AI: ${USE_MOCK_AI:-true}
     volumes:
       - document-storage:/app/storage:ro
+    # ── Optional GPU support ──────────────────────────────────────────────────
+    # Uncomment the deploy block below if an NVIDIA GPU is available.
+    # Requires: nvidia-container-toolkit installed on the host.
+    # Reference: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
     networks:
       - smart-inbox-network
 

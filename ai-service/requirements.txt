@@ -7,3 +7,10 @@ langgraph>=0.0.30
 langchain-core>=0.1.30
 pillow>=10.2.0
 pytest>=8.0.0
+# --- AI Model ---
+# torch and transformers enable the real Qwen2-VL model.
+# If you cannot install these (no GPU / disk space), set USE_MOCK_AI=true and
+# remove them — the pipeline will run in deterministic regex-fallback mode.
+torch>=2.1.0
+transformers>=4.45.0
+accelerate>=0.30.0

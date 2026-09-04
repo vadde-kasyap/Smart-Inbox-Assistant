@@ -1,15 +1,14 @@
 package com.clinevo.inbox.service;
 
 import com.clinevo.inbox.client.AIClient;
+import com.clinevo.inbox.dto.BenchmarkReportDto;
 import com.clinevo.inbox.dto.JobDto;
 import com.clinevo.inbox.dto.ai.AIProcessRequestDto;
 import com.clinevo.inbox.dto.ai.AIProcessResponseDto;
 import com.clinevo.inbox.entity.*;
 import com.clinevo.inbox.exception.ResourceNotFoundException;
 import com.clinevo.inbox.queue.JobQueue;
-import com.clinevo.inbox.repository.AttachmentRepository;
-import com.clinevo.inbox.repository.EmailRepository;
-import com.clinevo.inbox.repository.ProcessingJobRepository;
+import com.clinevo.inbox.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -32,6 +32,9 @@ public class JobService {
     private final AuditService auditService;
     private final AIClient aiClient;
     private final ResultService resultService;
+    private final AIResultRepository aiResultRepository;
+    private final ClassificationRepository classificationRepository;
+    private final ProcessingMetricsRepository metricsRepository;
 
     @Transactional(readOnly = true)
     public JobDto getJobById(Long jobId) {
@@ -55,6 +58,7 @@ public class JobService {
         job.setStatus(JobStatus.QUEUED);
         job.setErrorCode(null);
         job.setErrorMessage(null);
+        job.setRetryCount(0);
         job = jobRepository.save(job);
 
         Long emailId = job.getAttachment() != null && job.getAttachment().getEmail() != null
@@ -185,5 +189,51 @@ public class JobService {
                 .errorCode(job.getErrorCode())
                 .errorMessage(job.getErrorMessage())
                 .build();
+    }
+
+    /**
+     * Benchmark report — AGENTS.md §18.
+     * Returns one row per job with: filename, document type, classification,
+     * processing time (ms), and success / failure.
+     */
+    @Transactional(readOnly = true)
+    public List<BenchmarkReportDto> getBenchmarkReport() {
+        List<ProcessingJob> jobs = jobRepository.findAll();
+        List<BenchmarkReportDto> report = new ArrayList<>();
+
+        for (ProcessingJob job : jobs) {
+            Attachment att = job.getAttachment();
+            String filename = att != null ? att.getFilename() : "unknown";
+            boolean isPdf = att != null && Boolean.TRUE.equals(att.getIsPdf());
+            boolean success = job.getStatus() == JobStatus.COMPLETED;
+            String docType = isPdf ? "PDF" : "EMAIL_BODY";
+
+            // Gather classifications from the latest AI result for this job
+            List<AIResult> results = aiResultRepository.findAllByJobId(job.getId());
+            List<String> categories = new ArrayList<>();
+            if (!results.isEmpty()) {
+                AIResult latest = results.get(results.size() - 1);
+                classificationRepository.findByAiResultId(latest.getId())
+                        .forEach(c -> categories.add(c.getCategory()));
+            }
+
+            // Get total processing duration from metrics
+            long duration = metricsRepository.findLatestByJobId(job.getId())
+                    .map(ProcessingMetrics::getTotalDurationMs)
+                    .orElse(0L);
+
+            report.add(BenchmarkReportDto.builder()
+                    .jobId(job.getId())
+                    .filename(filename)
+                    .documentType(docType)
+                    .classification(categories.isEmpty() ? "UNCLASSIFIED" : String.join(", ", categories))
+                    .processingTimeMs(duration)
+                    .success(success)
+                    .status(job.getStatus() != null ? job.getStatus().name() : "UNKNOWN")
+                    .errorMessage(job.getErrorMessage())
+                    .build());
+        }
+
+        return report;
     }
 }

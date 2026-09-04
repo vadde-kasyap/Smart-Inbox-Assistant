@@ -362,7 +362,9 @@ async function handleUploadSubmit(e) {
 async function loadQueue(selectFirst = true) {
   try {
     let url = `/api/review-items?`;
-    if (state.activeCategory && state.activeCategory !== 'ALL') {
+    // REVIEW_REQUIRED is a job-level status, not a category — fetch all and filter locally
+    const isReviewRequired = state.activeCategory === 'REVIEW_REQUIRED';
+    if (state.activeCategory && state.activeCategory !== 'ALL' && !isReviewRequired) {
       url += `category=${encodeURIComponent(state.activeCategory)}&`;
     }
     if (state.searchQuery) {
@@ -373,10 +375,19 @@ async function loadQueue(selectFirst = true) {
     const data = await res.json();
 
     if (data.success && Array.isArray(data.data)) {
-      state.queueItems = data.data;
+      let allItems = data.data;
 
-      // Update Queue Status Indicators
-      const queuedCount = state.queueItems.filter(i => i.inQueue || i.status === 'RECEIVED' || i.status === 'PROCESSING').length;
+      // Client-side filter for REVIEW_REQUIRED
+      const displayItems = isReviewRequired
+        ? allItems.filter(i => i.jobStatus === 'REVIEW_REQUIRED' || i.status === 'REVIEW_REQUIRED')
+        : allItems;
+
+      state.queueItems = displayItems;
+
+      // Update Queue Status Indicators (always computed from all items)
+      const queuedCount = allItems.filter(i => i.inQueue || i.status === 'RECEIVED' || i.status === 'PROCESSING').length;
+      const reviewRequiredCount = allItems.filter(i => i.jobStatus === 'REVIEW_REQUIRED' || i.status === 'REVIEW_REQUIRED').length;
+
       if (elements.queueChipText) {
         elements.queueChipText.textContent = `${queuedCount} in queue`;
       }
@@ -386,13 +397,18 @@ async function loadQueue(selectFirst = true) {
       if (elements.queueChipDot) {
         elements.queueChipDot.classList.toggle('active', queuedCount > 0);
       }
+      const reviewBadge = document.getElementById('tab-review-required-badge');
+      if (reviewBadge) {
+        reviewBadge.textContent = reviewRequiredCount;
+        reviewBadge.style.display = reviewRequiredCount > 0 ? '' : 'none';
+      }
 
-      renderQueue(state.queueItems);
+      renderQueue(displayItems);
 
-      if (selectFirst && state.queueItems.length > 0 && !state.selectedEmailId) {
-        selectEmail(state.queueItems[0].emailId);
+      if (selectFirst && displayItems.length > 0 && !state.selectedEmailId) {
+        selectEmail(displayItems[0].emailId);
       } else if (state.selectedEmailId) {
-        const currentItem = state.queueItems.find(i => i.emailId === state.selectedEmailId);
+        const currentItem = displayItems.find(i => i.emailId === state.selectedEmailId);
         if (currentItem && (currentItem.inQueue || currentItem.status === 'PROCESSING')) {
           refreshSelectedDetail(state.selectedEmailId);
         }

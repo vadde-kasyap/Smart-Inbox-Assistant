@@ -10,5 +10,6 @@ import java.util.Optional;
 @Repository
 public interface AIResultRepository extends JpaRepository<AIResult, Long> {
     Optional<AIResult> findByJobId(Long jobId);
+    List<AIResult> findAllByJobId(Long jobId);
     List<AIResult> findByEmailId(Long emailId);
 }

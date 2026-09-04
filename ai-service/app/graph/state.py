@@ -11,6 +11,7 @@ class GraphState(TypedDict):
     document_type: str    # REPORT, FORM, ARTICLE
     language: str
     translated: bool
+    translated_text: Optional[str]  # English translation of non-English content
     canonical_context: Optional[Dict[str, Any]]
     raw_classifications: List[Dict[str, Any]]
     raw_extracted_fields: List[Dict[str, Any]]

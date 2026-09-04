@@ -1,3 +1,4 @@
+import os
 import time
 from app.graph.state import GraphState
 from app.schemas.response import AIProcessResponse
@@ -12,6 +13,7 @@ def source_validation_node(state: GraphState) -> GraphState:
 
     for f in fields:
         fname = f.get("field_name")
+        val = f.get("value")
         sources = f.get("source_references", [])
         if not sources:
             errors.append(f"Field '{fname}' has no source reference.")
@@ -29,7 +31,8 @@ def source_validation_node(state: GraphState) -> GraphState:
                 if current_att_id is not None and att_id is not None and att_id != current_att_id:
                     errors.append(f"Field '{fname}' references mismatched attachment ID {att_id}")
             snippet = s.get("text_snippet")
-            if not snippet or not snippet.strip():
+            # Only require non-empty text snippet for stated facts; 'Not stated' facts represent absence
+            if val != "Not stated" and (not snippet or not snippet.strip()):
                 errors.append(f"Field '{fname}' is missing source text snippet.")
 
     duration_ms = int((time.time() - start_time) * 1000)
@@ -48,11 +51,12 @@ def source_validation_node(state: GraphState) -> GraphState:
     validation_passed = (len(state["validation_errors"]) == 0)
 
     # Build final response
+    model_name = os.getenv("AI_MODEL_NAME", "Qwen/Qwen2-VL-2B-Instruct")
     final_resp = AIProcessResponse(
         job_id=state["job_id"],
-        model_name="Qwen3-VL-2B-Instruct",
+        model_name=model_name,
         model_version="v1.0",
-        prompt_version="v1",
+        prompt_version="v2",
         summary=state.get("raw_summary", "No summary generated."),
         relevant=state.get("is_relevant", True),
         classifications=state.get("raw_classifications", []),
