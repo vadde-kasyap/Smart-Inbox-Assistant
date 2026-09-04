@@ -51,11 +51,11 @@ docker compose up --build
 
 The AI microservice (`:8000`) performs multi-label classification (`ICSR`, `PQC`, `MI`, `NOT_RELEVANT`), domain fact extraction, and grounded clinical summaries:
 
-- **Primary Model**: `Qwen/Qwen2-VL-2B-Instruct` (or `Qwen3-VL-2B-Instruct`), chosen specifically for high semantic reasoning while running smoothly within laptop hardware constraints (fits within 8–16 GB system memory).
+- **Primary Model**: Strictly **`Qwen/Qwen2-VL-2B-Instruct`** (or `Qwen3-VL-2B-Instruct`), chosen specifically for high semantic reasoning while running locally within laptop hardware constraints (fits within 8–16 GB system memory). **No external or commercial third-party LLMs are used.**
 - **Execution Modes**:
-  - `USE_MOCK_AI=false` (Default): Runs real Qwen model inference. Model weights are cached in the persistent Docker volume `huggingface-cache` so they only download once.
-  - `AI_API_BASE`: Connects to a local OpenAI-compatible inference server (such as Ollama or vLLM at `http://host.docker.internal:11434/v1`).
-  - `USE_MOCK_AI=true`: Deterministic regex/keyword fallback mode for lightweight offline testing.
+  - `USE_MOCK_AI=false` (Default): Loads and runs the local **Qwen2-VL** model directly in-process using PyTorch & HuggingFace Transformers. Weights are cached locally in the persistent volume `huggingface-cache`.
+  - `AI_API_BASE` (Optional): If you prefer to serve your local **Qwen** model through an external local runner on your laptop (such as Ollama: `ollama run qwen2-vl` or local vLLM), you can point this to your local endpoint.
+  - `USE_MOCK_AI=true`: Fast deterministic rule-based fallback mode for offline testing without loading weights.
 - **Hardware-Aware Loading**: Automatically selects device allocation (`low_cpu_mem_usage=True`, `torch.float32` on CPU, `torch.bfloat16` on CUDA GPU).
 - **Acute Clinical Safety Safeguards**: Emergency reactions (e.g. heart attacks, cardiac arrests, anaphylaxis, severe rashes) and common phonetic typos (e.g. "alergy", "paracetomol") are recognized as life-threatening `ICSR` cases and strictly protected against false classification as `NOT_RELEVANT`.
 
